@@ -1,0 +1,17 @@
+{
+    "name": "mpd-client",
+    "version": "0.0.0",
+    "description": "",
+    "scripts": {
+        "start": "tsc && node dist/index.js",
+        "test": "tsc && npx vitest"
+    },
+    "type": "module",
+    "keywords": [],
+    "author": "",
+    "license": "ISC",
+    "devDependencies": {
+        "@types/node": "^22.13.5",
+        "vitest": "^3.0.7"
+    }
+}
