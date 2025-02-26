@@ -1,12 +1,12 @@
-import { Client, Status, SubClassProps } from "../types.js";
+import { Client, Data, SubClassProps } from "../types.js";
 
 export default class Command {
     private client: Client;
-    private status: Status;
+    private data: Data;
 
-    constructor({ client, status }: SubClassProps) {
+    constructor({ client, data }: SubClassProps) {
         this.client = client;
-        this.status = status;
+        this.data = data;
     }
 
     // MPD will respond with the status message in next response

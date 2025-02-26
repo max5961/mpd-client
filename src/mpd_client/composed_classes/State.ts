@@ -1,19 +1,19 @@
-import { Client, Status, SubClassProps } from "../types.js";
+import { Client, Data, SubClassProps } from "../types.js";
 
 export default class State {
     private client: Client;
-    private status: Status;
+    private data: Data;
 
-    constructor({ client, status }: SubClassProps) {
+    constructor({ client, data }: SubClassProps) {
         this.client = client;
-        this.status = status;
+        this.data = data;
     }
 
     public isPaused(): boolean {
-        return this.status.state === "pause" || this.status.state === "stop";
+        return this.data.status.state === "pause" || this.data.status.state === "stop";
     }
 
     public isPlaying(): boolean {
-        return this.status.state === "play";
+        return this.data.status.state === "play";
     }
 }

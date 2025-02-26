@@ -3,3 +3,4 @@
 ---
 
 Currently set up to log MPD status changes to the console.
+

@@ -1,8 +1,9 @@
 import net from "node:net";
 
 export type Client = ReturnType<typeof net.createConnection>;
-export type SubClassProps = { client: Client; status: Status };
+export type SubClassProps = { client: Client; data: Data };
 export type IntervalID = ReturnType<typeof setInterval>;
+export type Data = { status: Status };
 
 export type Status = {
     repeat: number;

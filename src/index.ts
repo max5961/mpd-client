@@ -12,6 +12,9 @@ const mpd = new MPDClient();
 //     //
 // })
 
-mpd.listen((status: Status) => {
-    console.log("status: ", status);
-});
+mpd.listen(
+    (status: Status) => {
+        console.log("status: ", status);
+    },
+    { polling: true, pollingInterval: 500 },
+);

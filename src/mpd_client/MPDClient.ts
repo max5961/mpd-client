@@ -1,17 +1,15 @@
 import net from "node:net";
-import { Client, Status } from "./types.js";
+import { Client, Data, Status } from "./types.js";
 import Command from "./composed_classes/Command.js";
 import Connection from "./composed_classes/Connection.js";
-import Polling from "./composed_classes/Polling.js";
 import State from "./composed_classes/State.js";
 import initialStatus from "./initialStatus.js";
 
 export default class MPDClient {
     private client: Client;
-    private status: Status;
+    private data: Data;
 
     public connection: Connection;
-    public polling: Polling;
     public command: Command;
     public state: State;
 
@@ -19,11 +17,10 @@ export default class MPDClient {
     // see - https://mpd.readthedocs.io/en/latest/client.html
     constructor() {
         this.client = net.createConnection({ port: 6600 });
-        this.status = initialStatus;
-        this.connection = new Connection({ client: this.client, status: this.status });
-        this.polling = new Polling({ client: this.client, status: this.status });
-        this.command = new Command({ client: this.client, status: this.status });
-        this.state = new State({ client: this.client, status: this.status });
+        this.data = { status: initialStatus };
+        this.connection = new Connection({ client: this.client, data: this.data });
+        this.command = new Command({ client: this.client, data: this.data });
+        this.state = new State({ client: this.client, data: this.data });
     }
 
     private isChanged(msg: string): boolean {
@@ -34,7 +31,7 @@ export default class MPDClient {
         return msg.includes("OK");
     }
 
-    private msgToStatusObj(msg: string): void {
+    private updateStatus(msg: string): void {
         const pairs = msg
             .split("\n")
             .map((line) => {
@@ -55,10 +52,12 @@ export default class MPDClient {
             // There will be some undefined values due to formatting of mpd's message
             .filter((pair) => pair[1] !== undefined);
 
+        // TODO: Add a key for the status of the message (OK)
+
         const status = Object.fromEntries(pairs);
 
         if (this.isStatusInterface(status)) {
-            this.status = status as Status;
+            this.data.status = status as Status;
         }
     }
 
@@ -72,25 +71,45 @@ export default class MPDClient {
         return true;
     }
 
-    public listen(handler: Handler): void {
+    public listen(
+        handler: Handler,
+        opts?: { polling?: boolean; pollingInterval?: number },
+    ): void {
+        opts = opts ?? {};
+        opts.polling = opts.polling ?? true;
+        opts.pollingInterval = opts.pollingInterval ?? 500;
+
         let calls = 0;
+        let timeout: NodeJS.Timeout | undefined;
 
         this.client.on("data", (buffer: Buffer) => {
+            // Request status update on initial run
             if (!calls++) {
                 return this.command.requestStatus();
             }
 
+            // Update status object based on message MPD sent
             const msg = buffer.toString("utf-8");
-            this.msgToStatusObj(msg);
+            this.updateStatus(msg);
 
-            // MPD changed, get the status, but don't pass off to handler
-            // until status is sent
+            // MPD changed, but has only notified us of the change.  Request the
+            // status and don't run handler until the status is received.
             if (this.isChanged(msg)) {
                 return this.responseOkay(msg) && this.command.requestStatus();
             }
 
-            this.command.idle();
-            handler(this.status);
+            // Run callback with the new status
+            handler(this.data.status);
+
+            // Request the status on the given interval, or idle and wait for messages
+            if (opts.polling && this.state.isPlaying()) {
+                timeout = setTimeout(() => {
+                    this.command.requestStatus();
+                }, opts.pollingInterval);
+            } else {
+                this.command.idle();
+                clearTimeout(timeout);
+            }
         });
     }
 }

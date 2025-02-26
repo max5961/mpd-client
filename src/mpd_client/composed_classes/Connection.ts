@@ -1,13 +1,13 @@
-import { Client, Status, SubClassProps } from "../types.js";
+import { Client, Data, SubClassProps } from "../types.js";
 
 export default class Connection {
     private client: Client;
-    private status: Status;
+    private data: Data;
     private connected: boolean;
 
-    constructor({ client, status }: SubClassProps) {
+    constructor({ client, data }: SubClassProps) {
         this.client = client;
-        this.status = status;
+        this.data = data;
         this.connected = false;
     }
 
@@ -19,10 +19,10 @@ export default class Connection {
         return this.connected;
     }
 
-    public checkConnection(status: string): void {
+    public checkConnection(data: string): void {
         if (this.connected) return;
 
-        if (status.includes("OK MPD")) {
+        if (data.includes("OK MPD")) {
             this.setConnected(true);
         } else {
             console.log("Error connecting to MPD client");
