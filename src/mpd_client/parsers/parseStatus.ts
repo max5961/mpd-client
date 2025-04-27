@@ -1,5 +1,5 @@
 import { Status } from "../types.js";
-import { initialStatus } from "../initializers.js";
+import { initialStatus } from "../initializers/initialStatus.js";
 
 export function parseStatus(response: string): Status | undefined {
     const pairs = response

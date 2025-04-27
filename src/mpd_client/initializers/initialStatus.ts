@@ -1,4 +1,4 @@
-import { Status } from "./types.js";
+import { Status } from "../types.js";
 
 export const initialStatus: Status = {
     repeat: 0,

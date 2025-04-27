@@ -2,7 +2,7 @@ import net from "node:net";
 import EventEmitter from "node:events";
 import JobsQueue from "./subclasses/JobsQueue.js";
 import Command from "./subclasses/Command.js";
-import { initialStatus } from "./initializers.js";
+import { initialStatus } from "./initializers/initialStatus.js";
 import { parseStatus } from "./parsers/parseStatus.js";
 import { Client, State, Event, Opts } from "./types.js";
 
