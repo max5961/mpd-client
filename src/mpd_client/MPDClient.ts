@@ -1,6 +1,7 @@
 import net from "node:net";
 import EventEmitter from "node:events";
 import JobsQueue from "./subclasses/JobsQueue.js";
+import Command from "./subclasses/Command.js";
 import { initialStatus } from "./initializers.js";
 import { parseStatus } from "./parsers/parseStatus.js";
 import { Client, State, Event, Opts } from "./types.js";
@@ -8,6 +9,7 @@ import { Client, State, Event, Opts } from "./types.js";
 export class MPDClient {
     private client!: Client;
     private jobsQueue!: JobsQueue;
+    public command: Command;
     private state: State;
     private opts: Required<Opts>;
     private emitter: EventEmitter;
@@ -15,6 +17,7 @@ export class MPDClient {
     constructor(opts: Opts = {}) {
         this.state = { connected: false, status: initialStatus, pendingResponse: false };
         this.emitter = new EventEmitter();
+        this.command = new Command();
 
         opts.pollingInterval = opts.pollingInterval ?? 500;
         opts.reconnectInterval = opts.reconnectInterval ?? 500;
@@ -27,6 +30,7 @@ export class MPDClient {
     private connect = (): void => {
         this.client = net.createConnection({ port: this.opts.port });
         this.jobsQueue = new JobsQueue(this.client);
+        this.command = new Command(this.jobsQueue);
 
         this.client.on("connect", () => {
             console.log("MPD - connected");
@@ -81,7 +85,7 @@ export class MPDClient {
             }
 
             // Handle status polling
-            const statusStr = await this.command("status");
+            const statusStr = await this.command.write("status");
             const status = parseStatus(statusStr);
 
             if (status) {
@@ -93,12 +97,6 @@ export class MPDClient {
              * ...
              * */
         }, this.opts.pollingInterval);
-    };
-
-    public command = (msg: string): Promise<string> => {
-        return new Promise<string>((resolve) => {
-            this.jobsQueue.push({ msg, resolve });
-        });
     };
 
     public on = <T extends keyof Event>(
