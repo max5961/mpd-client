@@ -2,6 +2,7 @@ import net from "node:net";
 import EventEmitter from "node:events";
 import JobsQueue from "./subclasses/JobsQueue.js";
 import Command from "./subclasses/Command.js";
+import Protocol from "./protocol/Protocol.js";
 import { initialStatus } from "./initializers/initialStatus.js";
 import { parseStatus } from "./parsers/parseStatus.js";
 import { Client, State, Event, Opts } from "./types.js";
@@ -40,7 +41,7 @@ export class MPDClient {
             this.handleData();
 
             // Start polling once connected
-            this.poll();
+            this.beginPolling();
         });
 
         const handleConnectionError = () => {
@@ -77,25 +78,25 @@ export class MPDClient {
         });
     };
 
-    private poll = async (): Promise<void> => {
+    private pollingFn = async () => {
+        const statusStr = await this.command.write(Protocol.status);
+        const status = parseStatus(statusStr);
+
+        if (status) {
+            this.emitter.emit("status", status);
+        }
+
+        /* ...handle other polling */
+    };
+
+    private beginPolling = async (): Promise<void> => {
         const ID = setInterval(async () => {
             if (!this.state.connected) {
                 clearInterval(ID);
                 return;
             }
 
-            // Handle status polling
-            const statusStr = await this.command.write("status");
-            const status = parseStatus(statusStr);
-
-            if (status) {
-                this.emitter.emit("status", status);
-            }
-
-            /*
-             * Handle other polling
-             * ...
-             * */
+            this.pollingFn();
         }, this.opts.pollingInterval);
     };
 
