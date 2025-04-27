@@ -1,64 +1,154 @@
 import net from "node:net";
-import { Client, Data, Status } from "./types.js";
-import Command from "./composed_classes/Command.js";
-import Connection from "./composed_classes/Connection.js";
-import State from "./composed_classes/State.js";
+import { Client, Status } from "./types.js";
+import EventEmitter from "node:events";
 import initialStatus from "./initialStatus.js";
 
-export default class MPDClient {
+type State = {
+    connected: boolean;
+    status: Status;
+    pendingResponse: boolean;
+};
+
+type Opts = {
+    pollingInterval?: number;
+    reconnectInterval?: number;
+    port?: number;
+};
+
+type Event = {
+    connected: boolean;
+    disconnected: boolean;
+    status: Status;
+    error: Error;
+};
+
+type Job = {
+    msg: string;
+    resolve: (data: string) => void;
+};
+
+export class MPDClient {
+    private state: State;
     private client!: Client;
-    private data!: Data;
-    private handler!: Handler | null;
+    private opts: Required<Opts>;
+    private jobs: Job[];
+    private emitter: EventEmitter;
+    private currentJob: undefined | Job;
 
-    public connection!: Connection;
-    public command!: Command;
-    public state!: State;
+    constructor(opts: Opts = {}) {
+        this.state = { connected: false, status: initialStatus, pendingResponse: false };
+        this.jobs = [];
+        this.emitter = new EventEmitter();
+        this.currentJob = undefined;
 
-    constructor() {
-        // this.listen method publicly defines a handler and it is cached in case
-        // connection is initially refused and gained later.  This would be the case
-        // if you started the client while mpd was not running, and then started
-        // mpd later
-        this.handler = null;
+        opts.pollingInterval = opts.pollingInterval ?? 500;
+        opts.reconnectInterval = opts.reconnectInterval ?? 500;
+        opts.port = opts.port ?? 6600;
+        this.opts = opts as Required<Opts>;
+
         this.connect();
     }
 
-    // MPD runs a TCP server on 6600
-    // see - https://mpd.readthedocs.io/en/latest/client.html
-    private async connect(refusedConnections: number = 0): Promise<boolean | void> {
-        this.client = net.createConnection({ port: 6600 });
+    private connect = (): void => {
+        this.client = net.createConnection({ port: this.opts.port });
 
         this.client.on("connect", () => {
-            this.client = net.createConnection({ port: 6600 });
-            this.data = { status: initialStatus };
-            this.connection = new Connection({ client: this.client, data: this.data });
-            this.command = new Command({ client: this.client, data: this.data });
-            this.state = new State({ client: this.client, data: this.data });
+            console.log("MPD - connected");
 
-            this.handler && this.listen(this.handler!);
+            this.state.connected = true;
+            this.state.pendingResponse = true;
+            this.handleData();
 
-            return true;
+            // Start polling once connected
+            this.poll();
         });
 
-        this.client.on("error", () => {
-            // Attempt connection every 500ms until connection gained.
+        const handleConnectionError = () => {
+            console.log("MPD - no connection"); // dev
+
             setTimeout(() => {
-                this.handleRefusedConnection(++refusedConnections);
+                this.connect();
             }, 500);
+        };
 
-            return false;
+        this.client.on("error", (e) => {
+            if (e.message.includes("ECONNREFUSED")) {
+                handleConnectionError();
+            }
         });
-    }
 
-    private isChanged(msg: string): boolean {
-        return msg.startsWith("changed");
-    }
+        this.client.on("close", () => {
+            console.log("ayo we closed");
+        });
 
-    private responseOkay(msg: string): boolean {
-        return msg.includes("OK");
-    }
+        this.client.on("connectionAttemptFailed", handleConnectionError);
+    };
 
-    private updateStatus(msg: string): void {
+    // TODO: Need to be more aware of getting a response before
+    // sending idle\n and noidle\n
+    // idle\n should be sent at the end of a stack
+    // noidle\n should be sent at the beginning of a stack
+    private handleData = (): void => {
+        if (!this.state.connected) return;
+
+        this.client.on("ready", () => {
+            console.log("MPD is ready");
+        });
+
+        this.client.on("data", (data: Buffer) => {
+            // console.log("data: ", data.toString("utf-8"));
+
+            const nextJob = this.jobs.shift();
+            this.state.pendingResponse = !!nextJob;
+
+            if (nextJob) {
+                this.client.write(nextJob.msg);
+            }
+
+            if (this.currentJob) {
+                const response = data.toString("utf-8");
+                this.currentJob.resolve(response);
+            }
+
+            this.currentJob = nextJob;
+        });
+    };
+
+    public command = (msg: string): Promise<string> => {
+        return new Promise<string>((resolve) => {
+            this.jobs.push({ msg, resolve });
+
+            if (!this.state.pendingResponse) {
+                this.currentJob = this.jobs.shift();
+                this.client.write(this.currentJob!.msg + "\n");
+                this.state.pendingResponse = false;
+            }
+        });
+    };
+
+    private poll = async (): Promise<void> => {
+        const ID = setInterval(async () => {
+            if (!this.state.connected) {
+                clearInterval(ID);
+                return;
+            }
+
+            // Handle status polling
+            const statusStr = await this.command("status");
+            const status = this.parseStatus(statusStr);
+
+            if (status) {
+                this.emitter.emit("status", status);
+            }
+
+            /*
+             * Handle other polling
+             * ...
+             * */
+        }, this.opts.pollingInterval);
+    };
+
+    private parseStatus = (msg: string): Status | undefined => {
         const pairs = msg
             .split("\n")
             .map((line) => {
@@ -83,94 +173,34 @@ export default class MPDClient {
 
         const status = Object.fromEntries(pairs);
 
-        if (this.isStatusInterface(status)) {
-            this.data.status = status as Status;
-        }
-    }
+        const isStatusInterface = () => {
+            const possibleKeys = new Set(Object.keys(initialStatus));
 
-    private isStatusInterface(obj: Object): boolean {
-        const possibleKeys = new Set(Object.keys(initialStatus));
-
-        for (const key in obj) {
-            if (!possibleKeys.has(key)) return false;
-        }
-
-        return true;
-    }
-
-    public listen(
-        handler: Handler,
-        opts?: { polling?: boolean; pollingInterval?: number },
-    ): void {
-        this.handler = handler;
-
-        opts = opts ?? {};
-        opts.polling = opts.polling ?? true;
-        opts.pollingInterval = opts.pollingInterval ?? 500;
-
-        let calls = 0;
-        let timeout: NodeJS.Timeout | undefined;
-        let refusedConnection = 0;
-
-        try {
-            this.client.on("data", (buffer: Buffer) => {
-                const msg = buffer.toString("utf-8");
-
-                // Request status update on initial run
-                if (!calls++) {
-                    if (!msg.includes("OK MPD")) {
-                        throw new Error("Port 6600 already in use");
-                    }
-
-                    refusedConnection++;
-                    return this.command.requestStatus();
-                }
-
-                // Update status object based on message MPD sent
-                this.updateStatus(msg);
-
-                // MPD changed, but has only notified us of the change.  Request the
-                // status and don't run handler until the status is received.
-                if (this.isChanged(msg)) {
-                    return this.responseOkay(msg) && this.command.requestStatus();
-                }
-
-                // Run callback with the new status
-                handler(this.data.status);
-
-                // Request the status on the given interval, or idle and wait for messages
-                if (opts.polling && this.state.isPlaying()) {
-                    timeout = setTimeout(() => {
-                        this.command.requestStatus();
-                    }, opts.pollingInterval);
-                } else {
-                    this.command.idle();
-                    clearTimeout(timeout);
-                }
-            });
-        } catch (error: any) {
-            if (error.message === "Port 6600 already in use") {
-                console.log(error.message);
-            } else {
-                throw error;
-            }
-        }
-    }
-
-    private async handleRefusedConnection(refusedConnections: number): Promise<void> {
-        const connection = await this.connect(++refusedConnections);
-
-        if (connection) {
-            this.handler && this.listen(this.handler);
-        } else {
-            if (refusedConnections === 1) {
-                // TODO: Event for refused connection
+            for (const key in status) {
+                if (!possibleKeys.has(key)) return false;
             }
 
-            // dev
-            console.log("refused to connect");
-        }
-    }
+            return true;
+        };
+
+        return (isStatusInterface() ? status : undefined) as Status | undefined;
+    };
+
+    /*
+     * Closes the connection, but moreover does cleanup work like removing the
+     * public event logic and internal polling event logic
+     * */
+    public closeConnection = (): void => {
+        //
+    };
+
+    /*
+     * Publically set event handlers
+     * */
+    public on = <T extends keyof Event>(
+        event: T,
+        cb: (data: Event[T]) => unknown,
+    ): void => {
+        this.emitter.on(event, cb);
+    };
 }
-
-type Handler = (status: Status) => void;

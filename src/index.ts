@@ -1,20 +1,26 @@
-import MPDClient from "./mpd_client/MPDClient.js";
-import { Status } from "./mpd_client/types.js";
+import { MPDClient } from "./mpd_client/MPDClient.js";
 
 const mpd = new MPDClient();
 
-// Depending on how things go, possibly create context specific layers?
-// mpd.state.isPlaying((status, next) => {
-//     //
-// })
-//
-// mpd.state.isPaused((status, next) => {
-//     //
-// })
+mpd.on("status", (status) => {
+    console.log(status);
+});
 
-mpd.listen(
-    (status: Status) => {
-        console.log("status: ", status);
-    },
-    { polling: true, pollingInterval: 500 },
-);
+// Would be better to use like this:
+// const mpd = new MPDClient({
+//     pollingInterval: 250,
+//     reconnectInterval: 500,
+//     port: 6600,
+//     host: "localhost"
+//     // Make constructor extend the configuration object for net.createConnection
+// });
+// mpd
+//     .on("statuschange", (status: Status) => { /* ... */ })
+//     .on("connected", handleConnected)
+//     .on("disconnected", handleDisconnected)
+//     .on("error", handleError);
+//
+// Frontend usage
+// All command methods must push to a queue
+// mpd.command.pause() // for commands builtin to this API
+// mpd.command.write("foobar") // for commands that this API might end up missing
