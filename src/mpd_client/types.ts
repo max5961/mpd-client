@@ -1,9 +1,30 @@
 import net from "node:net";
 
 export type Client = ReturnType<typeof net.createConnection>;
-export type SubClassProps = { client: Client; data: Data };
-export type IntervalID = ReturnType<typeof setInterval>;
-export type Data = { status: Status };
+
+export type State = {
+    connected: boolean;
+    status: Status;
+    pendingResponse: boolean;
+};
+
+export type Opts = {
+    pollingInterval?: number;
+    reconnectInterval?: number;
+    port?: number;
+};
+
+export type Event = {
+    status: Status;
+    connected: boolean;
+    disconnected: boolean;
+    error: Error;
+};
+
+export type Job = {
+    msg: string;
+    resolve: (data: string) => void;
+};
 
 export type Status = {
     repeat: number;

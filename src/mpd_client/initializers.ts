@@ -1,6 +1,6 @@
 import { Status } from "./types.js";
 
-const initialStatus: Status = {
+export const initialStatus: Status = {
     repeat: 0,
     random: 0,
     single: 0,
@@ -20,5 +20,3 @@ const initialStatus: Status = {
     nextsong: 0,
     nextsongid: 0,
 };
-
-export default initialStatus;
